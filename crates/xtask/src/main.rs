@@ -124,7 +124,8 @@ const SP1_TOOLS: [ToolRequirement; 1] = [ToolRequirement::new(
     "cargo-prove",
     "cargo",
     &["prove", "--version"],
-    "6.4.0",
+    // SP1 omits the release number from this output. This is the v6.4.0 tag commit.
+    "f66b4bf",
     "curl -L https://sp1.succinct.xyz | bash && sp1up --version 6.4.0",
 )];
 const ZISK_TOOLS: [ToolRequirement; 2] = [
@@ -299,8 +300,7 @@ fn binary_check(binary: &str, args: &[&str], version: Option<&str>) -> CheckResu
     match Command::new(binary).args(args).output() {
         Ok(output) => {
             let observed = command_text(&output);
-            let ok = output.status.success()
-                && version.is_none_or(|fragment| observed.contains(fragment));
+            let ok = output.status.success() && output_matches_version(&observed, version);
             let display = observed.lines().next().unwrap_or_default().to_owned();
             CheckResult {
                 label: binary.to_owned(),
@@ -320,6 +320,10 @@ fn binary_check(binary: &str, args: &[&str], version: Option<&str>) -> CheckResu
             remedy: None,
         },
     }
+}
+
+fn output_matches_version(observed: &str, version: Option<&str>) -> bool {
+    version.is_none_or(|fragment| observed.contains(fragment))
 }
 
 fn tool_check(requirement: ToolRequirement) -> CheckResult {
@@ -801,6 +805,16 @@ mod tests {
     fn missing_binary_is_reported() {
         let check = binary_check("a-binary-that-does-not-exist-zkevm-profile", &[], None);
         assert!(!check.ok);
+    }
+
+    #[test]
+    fn sp1_release_matches_commit_in_cli_version_output() {
+        let observed = "cargo-prove sp1 (f66b4bf 2026-08-12T14:40:11.709680161Z)";
+        assert!(output_matches_version(
+            observed,
+            Some(SP1_TOOLS[0].version_fragment)
+        ));
+        assert!(!output_matches_version(observed, Some("6.4.0")));
     }
 
     #[test]
