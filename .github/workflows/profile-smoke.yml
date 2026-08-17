@@ -5,14 +5,14 @@ on:
 
 jobs:
   profile-all:
-    # This runner label identifies a maintained host with the three pinned native toolchains.
+    # This runner label identifies a maintained host with the enabled native toolchains.
     # This workflow does not install or update vendor tools.
     runs-on: [self-hosted, zkevm-profiling]
     timeout-minutes: 360
     steps:
       - uses: actions/checkout@v4
-      - run: cargo xtask doctor --vm all
-      - run: cargo xtask profile --vm all --input fixtures/default.json --out profiles/manual-smoke
+      - run: cargo xtask doctor --vm enabled
+      - run: cargo xtask profile --vm enabled --input fixtures/default.json --out profiles/manual-smoke
       - uses: actions/upload-artifact@v4
         if: always()
         with:

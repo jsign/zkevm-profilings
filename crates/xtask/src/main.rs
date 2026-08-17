@@ -29,6 +29,7 @@ enum Task {
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, ValueEnum)]
 enum VmSelection {
+    Enabled,
     All,
     Openvm,
     Sp1,
@@ -38,6 +39,7 @@ enum VmSelection {
 impl VmSelection {
     fn members(self) -> Vec<Vm> {
         match self {
+            Self::Enabled => vec![Vm::Openvm, Vm::Sp1],
             Self::All => vec![Vm::Openvm, Vm::Sp1, Vm::Zisk],
             Self::Openvm => vec![Vm::Openvm],
             Self::Sp1 => vec![Vm::Sp1],
@@ -48,13 +50,15 @@ impl VmSelection {
 
 #[derive(Debug, Args)]
 struct DoctorArgs {
-    #[arg(long, value_enum, default_value_t = VmSelection::All)]
+    /// Select enabled adapters, all adapters, or one adapter.
+    #[arg(long, value_enum, default_value_t = VmSelection::Enabled)]
     vm: VmSelection,
 }
 
 #[derive(Debug, Args)]
 struct ProfileArgs {
-    #[arg(long, value_enum, default_value_t = VmSelection::All)]
+    /// Select enabled adapters, all adapters, or one adapter.
+    #[arg(long, value_enum, default_value_t = VmSelection::Enabled)]
     vm: VmSelection,
     /// This JSON file contains `seed` and `rounds`.
     #[arg(long)]
@@ -743,6 +747,31 @@ mod tests {
         let mut summary = success_summary(actual);
         validate_adapter_output(&mut summary, &expected, &digest, Path::new("."));
         assert_eq!(summary.status, AdapterStatus::Failed);
+    }
+
+    #[test]
+    fn enabled_selection_excludes_zisk() {
+        assert_eq!(VmSelection::Enabled.members(), vec![Vm::Openvm, Vm::Sp1]);
+        assert_eq!(
+            VmSelection::All.members(),
+            vec![Vm::Openvm, Vm::Sp1, Vm::Zisk]
+        );
+    }
+
+    #[test]
+    fn commands_use_enabled_selection_by_default() {
+        let doctor = Cli::try_parse_from(["cargo", "doctor"]).unwrap();
+        let Task::Doctor(doctor_args) = doctor.command else {
+            panic!("expected doctor command");
+        };
+        assert_eq!(doctor_args.vm, VmSelection::Enabled);
+
+        let profile =
+            Cli::try_parse_from(["cargo", "profile", "--input", "fixtures/default.json"]).unwrap();
+        let Task::Profile(profile_args) = profile.command else {
+            panic!("expected profile command");
+        };
+        assert_eq!(profile_args.vm, VmSelection::Enabled);
     }
 
     #[test]

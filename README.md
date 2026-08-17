@@ -3,6 +3,10 @@
 This repository profiles one Rust workload on OpenVM, SP1, and ZisK. It does not use Docker.
 Each adapter uses the applicable native Rust toolchain and SDK.
 
+Default profile operations run OpenVM and SP1. They temporarily exclude ZisK because the pinned
+ZisK release does not complete the current profile operation. The ZisK adapter remains available
+for development with an explicit VM selection.
+
 The harness pins these releases:
 
 - [OpenVM v2.0.2](https://github.com/openvm-org/openvm/releases/tag/v2.0.2)
@@ -14,10 +18,10 @@ dependencies separately from the vendor dependencies.
 
 ## Quick start
 
-Before you start a profile operation, use this command:
+Before you start a default profile operation, use this command:
 
 ```text
-cargo xtask doctor --vm all
+cargo xtask doctor
 ```
 
 The `doctor` command does not install or change software. It examines the operating system, exact
@@ -26,17 +30,16 @@ CLI versions, Rust toolchains, lockfiles, and common native build tools.
 If it finds a problem, it gives an official installation command. Before you use that command,
 examine it.
 
-To profile all VMs with the supplied fixture, use this command:
+To profile all enabled VMs with the supplied fixture, use this command:
 
 ```text
 ./scripts/profile-all --input fixtures/default.json
 ```
 
-To profile one adapter or select an output directory, use one of these commands:
+To profile one enabled adapter or select an output directory, use this command:
 
 ```text
 cargo xtask profile --vm sp1 --input fixtures/default.json
-cargo xtask profile --vm zisk --input fixtures/default.json --out /tmp/zisk-profile
 ```
 
 The output directory must not exist. If you do not use `--out`, the harness writes to
@@ -95,6 +98,17 @@ prover gas, instruction count, syscall count, and public output.
 
 ### ZisK
 
+The default VM selection does not run ZisK. The `profile-all` script and the smoke workflow use
+this default selection. A compatible ZisK release is necessary before the default selection can
+include this adapter.
+
+For ZisK adapter development, select the adapter explicitly:
+
+```text
+cargo xtask doctor --vm zisk
+cargo xtask profile --vm zisk --input fixtures/default.json --out /tmp/zisk-profile
+```
+
 The adapter uses `cargo-zisk` to build the guest. It uses `ZiskStdin` to make the native input file.
 Then, it starts `ziskemu` with symbols, full statistics, top functions, a Firefox profile, and
 ungrouped numbers.
@@ -105,7 +119,7 @@ It does not replace or discard vendor data.
 
 ## Output
 
-A complete profile operation has this structure:
+A profile operation for all adapters has this structure:
 
 ```text
 profiles/<run>/
@@ -140,9 +154,10 @@ profiles/<run>/
 An adapter directory can contain more raw build and execution logs. `run.json` contains each
 declared artifact, command, version, duration, hash, status, output digest, and profiling mode.
 
-The harness profiles adapters in this sequence: OpenVM, SP1, and ZisK. If one adapter fails, the
-harness continues with the remaining selected adapters. It always writes `run.json` and
-`summary.md`. If any adapter fails, the command exits with a nonzero status.
+The default selection profiles OpenVM and SP1 in that sequence. An explicit `--vm all` selection
+also profiles ZisK last. If one adapter fails, the harness continues with the remaining selected
+adapters. It always writes `run.json` and `summary.md`. If any adapter fails, the command exits
+with a nonzero status.
 
 ## Read the metrics correctly
 
@@ -169,7 +184,7 @@ adapters/openvm       Isolated OpenVM guest and runner
 adapters/sp1          Isolated SP1 guest and runner
 adapters/zisk         Isolated ZisK guest and runner
 fixtures              Small committed inputs and parser fixtures
-scripts/profile-all   Short entry point for cargo xtask profile
+scripts/profile-all   Entry point for profiling all enabled adapters
 ```
 
 Git ignores generated profiles and all build directories. The repository contains fixtures and all
