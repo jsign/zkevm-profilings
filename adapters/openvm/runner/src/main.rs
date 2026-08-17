@@ -6,20 +6,18 @@ use std::{
     time::Instant,
 };
 
-use anyhow::{anyhow, bail, Context, Result};
+use anyhow::{bail, Context, Result};
 use clap::Parser;
 use guest_workload::{Input, Output};
 use openvm_sdk::{
-    config::AggregationSystemParams, fs::read_object_from_file,
-    openvm_circuit::arch::instructions::exe::VmExe, prover::verify_app_proof, DefaultStarkEngine,
-    Sdk, StdIn, F,
+    config::AggregationSystemParams, prover::verify_app_proof, DefaultStarkEngine, Sdk, StdIn,
 };
 use openvm_stark_sdk::{
     bench::run_with_metric_collection,
     config::{app_params_with_100_bits_security, MAX_APP_LOG_STACKED_HEIGHT},
 };
 use profile_schema::{
-    parse_openvm_metrics, write_flamegraph, write_folded, write_json, AdapterStatus,
+    parse_openvm_metrics_with_symbols, write_flamegraph, write_folded, write_json, AdapterStatus,
     AdapterSummary, Metric,
 };
 use serde_json::Value;
@@ -72,15 +70,19 @@ fn main() -> Result<()> {
             String::from_utf8_lossy(&build.stderr)
         );
     }
-    let vmexe_path = unique_file_with_extension(&executable_directory, "vmexe")?;
-    let exe: VmExe<F> = read_object_from_file(&vmexe_path)
-        .map_err(|error| anyhow!("read OpenVM executable: {error:#}"))?;
     let elf_path = build_target.join("riscv32im-risc0-zkvm-elf/release/profile-openvm-guest");
     let elf_bytes =
         fs::read(&elf_path).with_context(|| format!("read guest ELF {}", elf_path.display()))?;
 
     let app_params = app_params_with_100_bits_security(MAX_APP_LOG_STACKED_HEIGHT);
     let sdk = Sdk::riscv32(app_params, AggregationSystemParams::default());
+    let guest_symbols_path = args.out.join("guest-symbols.bin");
+    std::env::set_var("GUEST_SYMBOLS_PATH", &guest_symbols_path);
+    // cargo-openvm's default build does not enable function-span metadata in its .vmexe.
+    // Transpile the ELF in this runner, whose openvm-sdk dependency enables perf-metrics.
+    let exe = sdk
+        .convert_to_exe(elf_bytes.clone())
+        .context("transpile OpenVM guest ELF with function spans")?;
     let mut stdin = StdIn::default();
     stdin.write(&input);
     let (public_values, (trace_cells, instructions)) = sdk
@@ -120,7 +122,9 @@ fn main() -> Result<()> {
         Ok(())
     })?;
     let metrics: Value = serde_json::from_slice(&fs::read(&metrics_path)?)?;
-    let profile = parse_openvm_metrics(&metrics, "cells_used")?;
+    let guest_symbols = fs::read(&guest_symbols_path)
+        .with_context(|| format!("read OpenVM guest symbols {}", guest_symbols_path.display()))?;
+    let profile = parse_openvm_metrics_with_symbols(&metrics, "cells_used", &guest_symbols)?;
     write_folded(&profile, &args.out.join("stacks.folded"))?;
     write_flamegraph(
         &profile,
@@ -134,6 +138,10 @@ fn main() -> Result<()> {
         (
             "profile-mode".to_owned(),
             "openvm/profile-mode.json".to_owned(),
+        ),
+        (
+            "guest-symbols".to_owned(),
+            "openvm/guest-symbols.bin".to_owned(),
         ),
         (
             "folded-stacks".to_owned(),
@@ -178,21 +186,6 @@ fn main() -> Result<()> {
     };
     write_json(&summary, &args.out.join("summary.json"))?;
     Ok(())
-}
-
-fn unique_file_with_extension(directory: &Path, extension: &str) -> Result<PathBuf> {
-    let files = fs::read_dir(directory)?
-        .filter_map(|entry| entry.ok().map(|entry| entry.path()))
-        .filter(|path| path.extension().is_some_and(|value| value == extension))
-        .collect::<Vec<_>>();
-    match files.as_slice() {
-        [path] => Ok(path.clone()),
-        [] => bail!("no .{extension} file exists in {}", directory.display()),
-        _ => bail!(
-            "more than one .{extension} file exists in {}",
-            directory.display()
-        ),
-    }
 }
 
 fn decode_public_output(bytes: &[u8]) -> Result<Output> {

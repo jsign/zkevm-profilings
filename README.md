@@ -68,6 +68,8 @@ cargo test --workspace
 
 The adapter uses `cargo openvm build` and `openvm.toml` to build the guest. Then, it starts metered
 execution. This operation supplies total instructions, estimated trace cells, and public output.
+The runner transpiles the built ELF with the SDK's `perf-metrics` feature. This step emits
+`guest-symbols.bin`, which the profile parser uses to resolve numeric function-span offsets.
 
 During preflight, OpenVM v2.0.2 supplies `frequency` and `cells_used` metrics for each function.
 The released SDK does not supply a public operation that only does preflight. After preflight, its

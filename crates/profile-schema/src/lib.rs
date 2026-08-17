@@ -446,7 +446,31 @@ fn metric_value(value: &Value) -> Option<u64> {
         .or_else(|| value.as_str()?.parse().ok())
 }
 
-fn metric_stack(entry: &Value) -> Vec<String> {
+fn openvm_symbol(symbols: &[u8], offset: usize) -> Result<String> {
+    let suffix = symbols
+        .get(offset..)
+        .with_context(|| format!("OpenVM symbol offset {offset} is outside the symbol table"))?;
+    let end = suffix
+        .iter()
+        .position(|byte| *byte == 0)
+        .with_context(|| format!("OpenVM symbol at offset {offset} is not NUL-terminated"))?;
+    let name = std::str::from_utf8(&suffix[..end])
+        .with_context(|| format!("OpenVM symbol at offset {offset} is not UTF-8"))?;
+    Ok(clean_frame(name))
+}
+
+fn openvm_frame(name: &str, symbols: Option<&[u8]>) -> Result<Option<String>> {
+    let name = name.trim();
+    if name.is_empty() {
+        return Ok(None);
+    }
+    if let (Some(symbols), Ok(offset)) = (symbols, name.parse::<usize>()) {
+        return openvm_symbol(symbols, offset).map(Some);
+    }
+    Ok(Some(clean_frame(name)))
+}
+
+fn metric_stack(entry: &Value, symbols: Option<&[u8]>) -> Result<Vec<String>> {
     let labels = entry.get("labels").unwrap_or(&Value::Null);
     let array_label = |name: &str| {
         labels.as_array()?.iter().find_map(|pair| {
@@ -462,23 +486,36 @@ fn metric_stack(entry: &Value) -> Vec<String> {
         .or_else(|| array_label("cycle_tracker_span"))
         .or_else(|| array_label("function"))
         .or_else(|| entry.get("cycle_tracker_span"));
-    match value {
-        Some(Value::Array(values)) => values
-            .iter()
-            .filter_map(Value::as_str)
-            .map(clean_frame)
-            .collect(),
-        Some(Value::String(value)) => value
-            .split([';', '>'])
-            .map(clean_frame)
-            .filter(|value| !value.is_empty())
-            .collect(),
-        _ => Vec::new(),
-    }
+    let names: Vec<&str> = match value {
+        Some(Value::Array(values)) => values.iter().filter_map(Value::as_str).collect(),
+        Some(Value::String(value)) => value.split([';', '>']).collect(),
+        _ => return Ok(Vec::new()),
+    };
+    names
+        .into_iter()
+        .filter_map(|name| openvm_frame(name, symbols).transpose())
+        .collect()
 }
 
 /// Parse OpenVM perf-metrics JSON for one metric, such as `cells_used`.
 pub fn parse_openvm_metrics(value: &Value, metric_name: &str) -> Result<ParsedProfile> {
+    parse_openvm_metrics_inner(value, metric_name, None)
+}
+
+/// Parse OpenVM perf-metrics and resolve numeric function spans through the guest symbol table.
+pub fn parse_openvm_metrics_with_symbols(
+    value: &Value,
+    metric_name: &str,
+    symbols: &[u8],
+) -> Result<ParsedProfile> {
+    parse_openvm_metrics_inner(value, metric_name, Some(symbols))
+}
+
+fn parse_openvm_metrics_inner(
+    value: &Value,
+    metric_name: &str,
+    symbols: Option<&[u8]>,
+) -> Result<ParsedProfile> {
     let mut entries = Vec::new();
     find_metric_entries(value, &mut entries);
     let mut folded = BTreeMap::<String, u64>::new();
@@ -491,7 +528,7 @@ pub fn parse_openvm_metrics(value: &Value, metric_name: &str) -> Result<ParsedPr
         let Some(cost) = entry.get("value").and_then(metric_value) else {
             continue;
         };
-        let mut path = metric_stack(entry);
+        let mut path = metric_stack(entry, symbols)?;
         if path.is_empty() {
             path.push("[unattributed]".to_owned());
         }
@@ -764,6 +801,46 @@ mod tests {
             profile.folded["guest_workload::run;guest_workload::finalize"],
             8
         );
+    }
+
+    #[test]
+    fn resolves_openvm_function_span_offsets() {
+        let symbols = b"\0root\0guest_workload::run\0guest_workload::mix\0";
+        let offset = |name: &[u8]| {
+            symbols
+                .windows(name.len())
+                .position(|window| window == name)
+                .unwrap()
+        };
+        let run = offset(b"guest_workload::run");
+        let mix = offset(b"guest_workload::mix");
+        let value = serde_json::json!({
+            "counter": [{
+                "metric": "cells_used",
+                "labels": [["cycle_tracker_span", format!("{run};{mix}")]],
+                "value": "12"
+            }]
+        });
+
+        let profile = parse_openvm_metrics_with_symbols(&value, "cells_used", symbols).unwrap();
+        assert_eq!(
+            profile.folded["guest_workload::run;guest_workload::mix"],
+            12
+        );
+    }
+
+    #[test]
+    fn treats_an_empty_openvm_span_as_unattributed() {
+        let value = serde_json::json!({
+            "counter": [{
+                "metric": "cells_used",
+                "labels": [["cycle_tracker_span", ""]],
+                "value": "7"
+            }]
+        });
+
+        let profile = parse_openvm_metrics(&value, "cells_used").unwrap();
+        assert_eq!(profile.folded["[unattributed]"], 7);
     }
 
     #[test]
