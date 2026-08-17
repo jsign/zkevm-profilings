@@ -1,0 +1,20 @@
+{
+  "threads": [
+    {
+      "stringTable": ["root", "guest_workload::run", "guest_workload::mix"],
+      "frameTable": {
+        "schema": {"location": 0},
+        "data": [[0], [1], [2]]
+      },
+      "stackTable": {
+        "schema": {"prefix": 0, "frame": 1},
+        "data": [[null, 0], [0, 1], [1, 2]]
+      },
+      "samples": {
+        "schema": {"stack": 0, "weight": 1},
+        "data": [[2, 7], [1, 3]]
+      }
+    }
+  ]
+}
+

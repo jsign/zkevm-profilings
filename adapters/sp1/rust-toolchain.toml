@@ -1,0 +1,4 @@
+[toolchain]
+channel = "succinct"
+profile = "minimal"
+

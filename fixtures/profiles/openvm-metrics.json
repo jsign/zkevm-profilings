@@ -1,0 +1,20 @@
+{
+  "counter": [
+    {
+      "metric": "cells_used",
+      "labels": [["air_name", "Rv32M"], ["cycle_tracker_span", "guest_workload::run;guest_workload::mix"]],
+      "value": "12"
+    },
+    {
+      "metric": "cells_used",
+      "labels": [["air_name", "Rv32I"], ["cycle_tracker_span", "guest_workload::run;guest_workload::finalize"]],
+      "value": "8"
+    },
+    {
+      "metric": "frequency",
+      "labels": [["opcode", "ADD"], ["cycle_tracker_span", "guest_workload::run"]],
+      "value": "4"
+    }
+  ]
+}
+

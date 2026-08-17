@@ -1,0 +1,17 @@
+[package]
+name = "profile-openvm-runner"
+version = "0.1.0"
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+anyhow = "1.0"
+clap = { version = "4.5", features = ["derive"] }
+guest-workload = { path = "../../../crates/guest-workload" }
+hex = "0.4"
+openvm-sdk = { version = "=2.0.2", features = ["metrics", "perf-metrics"] }
+openvm-stark-sdk = { version = "=2.0.1", default-features = false, features = ["cpu-backend", "metrics"] }
+profile-schema = { path = "../../../crates/profile-schema" }
+serde_json = "1.0"
+sha2 = "0.10"
+

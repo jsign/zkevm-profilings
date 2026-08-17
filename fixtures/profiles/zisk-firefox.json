@@ -1,0 +1,19 @@
+{
+  "shared": {
+    "stringArray": ["guest_workload::run", "guest_workload::mix"],
+    "frameTable": {"func": [0, 1], "length": 2},
+    "funcTable": {"name": [0, 1], "length": 2},
+    "stackTable": {"frame": [0, 1], "prefix": [null, 0], "length": 2}
+  },
+  "threads": [
+    {
+      "samples": {
+        "weightType": "tracing-ms",
+        "weight": [5.0, 3.0],
+        "stack": [1, 0],
+        "length": 2
+      }
+    }
+  ]
+}
+

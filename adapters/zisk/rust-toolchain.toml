@@ -1,0 +1,4 @@
+[toolchain]
+channel = "zisk"
+profile = "minimal"
+

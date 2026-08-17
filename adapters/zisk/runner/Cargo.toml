@@ -1,0 +1,21 @@
+[package]
+name = "profile-zisk-runner"
+version = "0.1.0"
+edition.workspace = true
+license.workspace = true
+build = "build.rs"
+
+[dependencies]
+anyhow = "1.0"
+bincode = { version = "2.0", features = ["serde", "std"] }
+clap = { version = "4.5", features = ["derive"] }
+guest-workload = { path = "../../../crates/guest-workload" }
+hex = "0.4"
+profile-schema = { path = "../../../crates/profile-schema" }
+serde_json = "1.0"
+sha2 = "0.10"
+zisk-sdk = { git = "https://github.com/0xPolygonHermez/zisk.git", tag = "v1.0.0-alpha" }
+
+[build-dependencies]
+zisk-sdk = { git = "https://github.com/0xPolygonHermez/zisk.git", tag = "v1.0.0-alpha" }
+
