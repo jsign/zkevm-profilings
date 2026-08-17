@@ -16,6 +16,22 @@ The harness pins these releases:
 Each adapter has a separate `Cargo.lock` file and target directory. The root workspace resolves its
 dependencies separately from the vendor dependencies.
 
+## Sample flamegraphs
+
+These flamegraphs come from some sample run that you can reproduce locally. Each image links to the
+full-size SVG.
+
+### OpenVM
+
+[![OpenVM trace-cell flamegraph][openvm-sample]][openvm-sample]
+
+### SP1
+
+[![SP1 execution flamegraph][sp1-sample]][sp1-sample]
+
+[openvm-sample]: assets/20260817-233131Z/openvm-flamegraph.svg
+[sp1-sample]: assets/20260817-233131Z/sp1-flamegraph.svg
+
 ## Quick start
 
 Before you start a default profile operation, use this command:
