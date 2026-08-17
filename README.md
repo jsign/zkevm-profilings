@@ -18,8 +18,8 @@ dependencies separately from the vendor dependencies.
 
 ## Sample flamegraphs
 
-These flamegraphs come from some sample run that you can reproduce locally. Each image links to the
-full-size SVG.
+These flamegraphs come from profile run `20260817-235220Z` with the supplied default fixture. Each
+image links to the full-size SVG.
 
 ### OpenVM
 
@@ -29,8 +29,8 @@ full-size SVG.
 
 [![SP1 execution flamegraph][sp1-sample]][sp1-sample]
 
-[openvm-sample]: assets/20260817-233131Z/openvm-flamegraph.svg
-[sp1-sample]: assets/20260817-233131Z/sp1-flamegraph.svg
+[openvm-sample]: assets/20260817-235220Z/openvm-flamegraph.svg
+[sp1-sample]: assets/20260817-235220Z/sp1-flamegraph.svg
 
 ## Quick start
 
@@ -66,8 +66,9 @@ The output directory must not exist. If you do not use `--out`, the harness writ
 Edit [`crates/guest-workload/src/lib.rs`](crates/guest-workload/src/lib.rs). Only this file contains
 workload logic. The crate uses `no_std`. It gives deterministic results and has no VM dependencies.
 
-The `initialize`, `mix`, and `finalize` functions use `#[inline(never)]`. Thus, profiles show useful
-symbol frames. Do not put vendor I/O, guest profile markers, or VM feature flags in this crate.
+The initialization, execution kernels, and finalization functions use `#[inline(never)]`. Thus,
+profiles show useful symbol frames for arithmetic, memory, branch, and division work. Do not put
+vendor I/O, guest profile markers, or VM feature flags in this crate.
 
 The wrapper for each guest does only these operations:
 
