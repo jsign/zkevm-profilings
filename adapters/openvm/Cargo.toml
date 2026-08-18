@@ -5,3 +5,8 @@ resolver = "2"
 [workspace.package]
 edition = "2021"
 license = "MIT"
+
+[workspace.dependencies]
+openvm = { version = "=2.0.0", git = "https://github.com/openvm-org/openvm.git", rev = "538c5488130da56c8442d33445efe3c1fe5ea8b8" }
+openvm-sdk = { version = "=2.0.0", git = "https://github.com/openvm-org/openvm.git", rev = "538c5488130da56c8442d33445efe3c1fe5ea8b8" }
+openvm-stark-sdk = { version = "=2.0.0", git = "https://github.com/openvm-org/stark-backend.git", branch = "develop-v2.1.0", default-features = false }

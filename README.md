@@ -9,16 +9,20 @@ for development with an explicit VM selection.
 
 The harness pins these releases:
 
-- [OpenVM v2.0.2](https://github.com/openvm-org/openvm/releases/tag/v2.0.2)
+- [OpenVM v2.1.0-preview](https://github.com/openvm-org/openvm/tree/v2.1.0-preview) at commit `538c548`
 - [SP1 v6.4.0](https://github.com/succinctlabs/sp1/releases/tag/v6.4.0)
 - [ZisK v1.0.0-alpha](https://github.com/0xPolygonHermez/zisk/releases/tag/v1.0.0-alpha)
 
 Each adapter has a separate `Cargo.lock` file and target directory. The root workspace resolves its
 dependencies separately from the vendor dependencies.
 
+OpenVM v2.1.0-preview is an unreleased RV64 snapshot. Its crates and CLI still report package
+version `2.0.0`. This harness identifies the snapshot as `v2.1.0-preview@538c548` and checks the
+CLI commit instead of its package version.
+
 ## Sample flamegraphs
 
-These flamegraphs come from profile run `20260817-235220Z` with the supplied default fixture. Each
+These flamegraphs come from profile run `20260818-003648Z` with the supplied default fixture. Each
 image links to the full-size SVG.
 
 ### OpenVM
@@ -29,8 +33,8 @@ image links to the full-size SVG.
 
 [![SP1 execution flamegraph][sp1-sample]][sp1-sample]
 
-[openvm-sample]: assets/20260817-235220Z/openvm-flamegraph.svg
-[sp1-sample]: assets/20260817-235220Z/sp1-flamegraph.svg
+[openvm-sample]: assets/20260818-003648Z/openvm-flamegraph.svg
+[sp1-sample]: assets/20260818-003648Z/sp1-flamegraph.svg
 
 ## Quick start
 
@@ -45,6 +49,17 @@ CLI versions, Rust toolchains, lockfiles, and common native build tools.
 
 If it finds a problem, it gives an official installation command. Before you use that command,
 examine it.
+
+OpenVM v2.1.0-preview requires Rust 1.91.1 for the host and the `openvm-1.94.1` guest toolchain.
+Install the pinned CPU CLI and guest toolchain with these commands:
+
+```text
+rustup toolchain install 1.91.1 --profile minimal
+cargo +1.91.1 install --locked --force --git https://github.com/openvm-org/openvm.git --rev 538c5488130da56c8442d33445efe3c1fe5ea8b8 cargo-openvm
+cargo openvm toolchain install
+```
+
+The preview supplies guest toolchains for x86-64 Linux, AArch64 Linux, and AArch64 macOS.
 
 To profile all enabled VMs with the supplied fixture, use this command:
 
@@ -86,14 +101,24 @@ cargo test --workspace
 
 ### OpenVM
 
-The adapter uses `cargo openvm build` and `openvm.toml` to build the guest. Then, it starts metered
-execution. This operation supplies total instructions, estimated trace cells, and public output.
-The runner transpiles the built ELF with the SDK's `perf-metrics` feature. This step emits
-`guest-symbols.bin`, which the profile parser uses to resolve numeric function-span offsets.
+The adapter uses `cargo openvm build --locked` and `openvm.toml` to build an RV64IM ELF with target
+`riscv64im-unknown-openvm-elf`. It rejects ELF32, big-endian, and non-RISC-V build output. The guest
+publishes its four output words with `reveal_u64`.
 
-During preflight, OpenVM v2.0.2 supplies `frequency` and `cells_used` metrics for each function.
-The released SDK does not supply a public operation that only does preflight. After preflight, its
-public `AppProver` starts proof generation.
+The runner transpiles the ELF with the `perf-metrics` feature of the SDK. This step emits
+`guest-symbols.bin`, which the profile parser uses to resolve numeric function-span offsets. It
+uses `Sdk::riscv64`, compiles the executable with `compile_metered_cost`, and starts metered
+execution. This operation supplies total instructions, estimated trace cells, and public output.
+
+At preview commit `538c548`, proof preflight does not emit the function-level `cells_used`
+counters that its profiling parser expects. The runner uses interpreter preflight to collect the
+dynamic function-span instruction counts. It apportions the exact metered trace-cell total across
+these spans by instruction count and writes compatibility `cells_used` records. Thus, the total is
+exact, but per-function trace-cell costs are instruction-weighted estimates. The runner records
+this detail in `profile-mode.json`.
+
+The preview SDK does not supply a stable public operation that stops `AppProver` after preflight.
+After preflight, its public `AppProver` starts proof generation.
 
 Thus, the adapter records `full-proof-fallback`. It makes an app proof and makes sure that the proof
 is correct. It keeps the profile and discards the proof. It writes the reason to

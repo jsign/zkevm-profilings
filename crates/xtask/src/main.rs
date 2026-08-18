@@ -94,7 +94,7 @@ impl Vm {
 
     fn required_toolchain(self) -> &'static str {
         match self {
-            Self::Openvm => "nightly-2026-01-18",
+            Self::Openvm => "openvm-1.94.1",
             Self::Sp1 => "succinct",
             Self::Zisk => "zisk",
         }
@@ -102,9 +102,23 @@ impl Vm {
 
     fn toolchain_install(self) -> &'static str {
         match self {
-            Self::Openvm => "rustup toolchain install nightly-2026-01-18 --component rust-src",
+            Self::Openvm => "cargo openvm toolchain install",
             Self::Sp1 => "sp1up --version 6.4.0",
             Self::Zisk => "cargo-zisk toolchain install",
+        }
+    }
+
+    fn required_host_toolchain(self) -> Option<&'static str> {
+        match self {
+            Self::Openvm => Some("1.91.1"),
+            Self::Sp1 | Self::Zisk => None,
+        }
+    }
+
+    fn host_toolchain_install(self) -> Option<&'static str> {
+        match self {
+            Self::Openvm => Some("rustup toolchain install 1.91.1 --profile minimal"),
+            Self::Sp1 | Self::Zisk => None,
         }
     }
 
@@ -121,8 +135,8 @@ const OPENVM_TOOLS: [ToolRequirement; 1] = [ToolRequirement::new(
     "cargo-openvm",
     "cargo",
     &["openvm", "--version"],
-    "2.0.2",
-    "cargo install --git https://github.com/openvm-org/openvm.git --tag v2.0.2 cargo-openvm",
+    "538c548",
+    "cargo +1.91.1 install --locked --force --git https://github.com/openvm-org/openvm.git --rev 538c5488130da56c8442d33445efe3c1fe5ea8b8 cargo-openvm",
 )];
 const SP1_TOOLS: [ToolRequirement; 1] = [ToolRequirement::new(
     "cargo-prove",
@@ -218,6 +232,11 @@ fn doctor(selection: VmSelection, repository: &Path) -> Result<()> {
     println!();
     for vm in selection.members() {
         println!("{}:", vm.name());
+        if vm == Vm::Openvm {
+            let check = openvm_host_check();
+            print_check(&check);
+            checks.push(check);
+        }
         for dependency in vm.native_dependencies() {
             let check = native_dependency_check(dependency);
             print_check(&check);
@@ -225,6 +244,15 @@ fn doctor(selection: VmSelection, repository: &Path) -> Result<()> {
         }
         for requirement in vm.required_tools() {
             let check = tool_check(*requirement);
+            print_check(&check);
+            checks.push(check);
+        }
+        if let Some(toolchain) = vm.required_host_toolchain() {
+            let check = rust_toolchain_check_named(
+                format!("host Rust toolchain {toolchain}"),
+                toolchain,
+                vm.host_toolchain_install().unwrap(),
+            );
             print_check(&check);
             checks.push(check);
         }
@@ -300,6 +328,21 @@ fn os_check() -> CheckResult {
     }
 }
 
+fn openvm_host_check() -> CheckResult {
+    let arch = env::consts::ARCH;
+    let os = env::consts::OS;
+    let host = format!("{arch}-{os}");
+    CheckResult {
+        label: "OpenVM host".to_owned(),
+        ok: matches!(
+            (arch, os),
+            ("x86_64", "linux") | ("aarch64", "linux" | "macos")
+        ),
+        observed: host,
+        remedy: Some("Use x86_64 Linux, aarch64 Linux, or aarch64 macOS.".to_owned()),
+    }
+}
+
 fn binary_check(binary: &str, args: &[&str], version: Option<&str>) -> CheckResult {
     match Command::new(binary).args(args).output() {
         Ok(output) => {
@@ -343,42 +386,45 @@ fn tool_check(requirement: ToolRequirement) -> CheckResult {
 
 fn rust_toolchain_check(vm: Vm) -> CheckResult {
     let toolchain = vm.required_toolchain();
+    rust_toolchain_check_named(
+        format!("Rust toolchain {toolchain}"),
+        toolchain,
+        vm.toolchain_install(),
+    )
+}
+
+fn rust_toolchain_check_named(label: String, toolchain: &str, remedy: &str) -> CheckResult {
     let output = Command::new("rustup").args(["toolchain", "list"]).output();
     match output {
         Ok(output) => {
             let observed = command_text(&output);
-            let mut ok =
-                output.status.success() && observed.lines().any(|line| line.starts_with(toolchain));
-            let mut detail = if ok { "installed" } else { "not installed" }.to_owned();
-            if ok && vm == Vm::Openvm {
-                let components = Command::new("rustup")
-                    .args(["component", "list", "--toolchain", toolchain, "--installed"])
-                    .output();
-                let has_rust_src = components.is_ok_and(|output| {
-                    output.status.success()
-                        && String::from_utf8_lossy(&output.stdout)
-                            .lines()
-                            .any(|line| line.starts_with("rust-src"))
+            let ok = output.status.success()
+                && observed.lines().any(|line| {
+                    line.split_whitespace()
+                        .next()
+                        .is_some_and(|installed| toolchain_name_matches(installed, toolchain))
                 });
-                if !has_rust_src {
-                    ok = false;
-                    detail = "installed without rust-src".to_owned();
-                }
-            }
             CheckResult {
-                label: format!("Rust toolchain {toolchain}"),
+                label,
                 ok,
-                observed: detail,
-                remedy: Some(vm.toolchain_install().to_owned()),
+                observed: if ok { "installed" } else { "not installed" }.to_owned(),
+                remedy: Some(remedy.to_owned()),
             }
         }
         Err(error) => CheckResult {
-            label: format!("Rust toolchain {toolchain}"),
+            label,
             ok: false,
             observed: error.to_string(),
-            remedy: Some(vm.toolchain_install().to_owned()),
+            remedy: Some(remedy.to_owned()),
         },
     }
+}
+
+fn toolchain_name_matches(installed: &str, required: &str) -> bool {
+    installed == required
+        || installed
+            .strip_prefix(required)
+            .is_some_and(|suffix| suffix.starts_with("-x86_64-") || suffix.starts_with("-aarch64-"))
 }
 
 fn command_text(output: &ProcessOutput) -> String {
@@ -507,8 +553,11 @@ fn profile_one(vm: Vm, repository: &Path, input: &Path, out: &Path) -> Result<Ad
         .join(vm.name())
         .join("runner")
         .join("Cargo.toml");
-    let command = vec![
-        "cargo".to_owned(),
+    let mut command = vec!["cargo".to_owned()];
+    if let Some(toolchain) = vm.required_host_toolchain() {
+        command.push(format!("+{toolchain}"));
+    }
+    command.extend([
         "run".to_owned(),
         "--locked".to_owned(),
         "--release".to_owned(),
@@ -519,7 +568,17 @@ fn profile_one(vm: Vm, repository: &Path, input: &Path, out: &Path) -> Result<Ad
         input.display().to_string(),
         "--out".to_owned(),
         out.display().to_string(),
-    ];
+    ]);
+    if vm == Vm::Openvm {
+        let host = openvm_host_check();
+        if !host.ok {
+            return Ok(AdapterSummary::failed(
+                vm.name(),
+                command,
+                format!("unsupported {}: {}", host.label, host.observed),
+            ));
+        }
+    }
     for requirement in vm.required_tools() {
         let result = tool_check(*requirement);
         if !result.ok {
@@ -529,6 +588,23 @@ fn profile_one(vm: Vm, repository: &Path, input: &Path, out: &Path) -> Result<Ad
                 format!(
                     "{} prerequisite is unavailable or has the wrong version: {}. Install with: {}",
                     requirement.label, result.observed, requirement.install
+                ),
+            ));
+        }
+    }
+    if let Some(toolchain) = vm.required_host_toolchain() {
+        let check = rust_toolchain_check_named(
+            format!("host Rust toolchain {toolchain}"),
+            toolchain,
+            vm.host_toolchain_install().unwrap(),
+        );
+        if !check.ok {
+            return Ok(AdapterSummary::failed(
+                vm.name(),
+                command,
+                format!(
+                    "required host Rust toolchain {toolchain} is missing; install it with: {}",
+                    vm.host_toolchain_install().unwrap()
                 ),
             ));
         }
@@ -844,6 +920,30 @@ mod tests {
             Some(SP1_TOOLS[0].version_fragment)
         ));
         assert!(!output_matches_version(observed, Some("6.4.0")));
+    }
+
+    #[test]
+    fn openvm_preview_matches_commit_in_cli_version_output() {
+        let observed = "v2.0.0 (538c5488130da56c8442d33445efe3c1fe5ea8b8)";
+        assert!(output_matches_version(
+            observed,
+            Some(OPENVM_TOOLS[0].version_fragment)
+        ));
+        assert!(!output_matches_version(observed, Some("59a69b8")));
+    }
+
+    #[test]
+    fn rust_toolchain_match_requires_the_exact_version() {
+        assert!(toolchain_name_matches(
+            "1.91.1-x86_64-unknown-linux-gnu",
+            "1.91.1"
+        ));
+        assert!(toolchain_name_matches("openvm-1.94.1", "openvm-1.94.1"));
+        assert!(!toolchain_name_matches(
+            "1.91.10-x86_64-unknown-linux-gnu",
+            "1.91.1"
+        ));
+        assert!(!toolchain_name_matches("openvm-1.94.10", "openvm-1.94.1"));
     }
 
     #[test]

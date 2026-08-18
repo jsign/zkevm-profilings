@@ -2,7 +2,7 @@
 #![no_std]
 
 use guest_workload::Input;
-use openvm::io::{read, reveal_u32};
+use openvm::io::{read, reveal_u64};
 
 openvm::entry!(main);
 
@@ -16,7 +16,6 @@ pub fn main() {
         output.checksum,
     ];
     for (value_index, value) in values.into_iter().enumerate() {
-        reveal_u32(value as u32, value_index * 2);
-        reveal_u32((value >> 32) as u32, value_index * 2 + 1);
+        reveal_u64(value, value_index);
     }
 }

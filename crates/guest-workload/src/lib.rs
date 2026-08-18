@@ -132,8 +132,8 @@ pub fn division_kernel(state: &mut [u64; 4], round: u32) {
     let mut value = state[0] ^ state[2].rotate_left(17) ^ u64::from(round);
     let mut step = 0;
     while step < 3 {
-        // Keep division native-sized on the 32-bit guest targets so it stays visible
-        // without turning a compiler-provided 64-bit helper into the whole profile.
+        // Keep this kernel on explicit 32-bit operands so it stays visible without
+        // letting wide compiler-provided division helpers dominate a guest profile.
         let numerator = value as u32;
         let divisor = ((value >> 32) as u32) | 1;
         let quotient = numerator / divisor;
