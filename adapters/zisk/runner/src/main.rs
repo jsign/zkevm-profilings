@@ -4,15 +4,14 @@ use anyhow::{bail, Context, Result};
 use clap::Parser;
 use guest_workload::{Input, Output};
 use profile_schema::{
-    parse_zisk_function_costs, parse_zisk_statistics, read_firefox_profile, write_flamegraph,
-    write_folded, write_json, write_zisk_html, write_zisk_stats_csv, AdapterStatus, AdapterSummary,
-    Metric,
+    parse_zisk_function_costs, parse_zisk_stats_csv, read_firefox_profile, write_flamegraph,
+    write_folded, write_json, AdapterStatus, AdapterSummary, Metric,
 };
 use sha2::{Digest, Sha256};
 use zisk_sdk::{load_program, GuestProgram, ZiskStdin};
 
 static PROGRAM: GuestProgram = load_program!("profile-zisk-guest");
-const SDK_VERSION: &str = "1.0.0-alpha";
+const SDK_VERSION: &str = "1.1.0-alpha";
 
 #[derive(Debug, Parser)]
 struct Args {
@@ -30,6 +29,8 @@ fn main() -> Result<()> {
     let input_path = args.out.join("input.bin");
     let output_path = args.out.join("output.bin");
     let profile_path = args.out.join("profile.json.gz");
+    let stats_path = args.out.join("stats.csv");
+    let report_path = args.out.join("report.html");
     fs::write(&elf_path, PROGRAM.elf())?;
     let stdin = ZiskStdin::new();
     stdin.write(&input);
@@ -48,6 +49,9 @@ fn main() -> Result<()> {
         "--sdk".to_owned(),
         "--top-functions".to_owned(),
         "--no-thousands-sep".to_owned(),
+        "--csv-separator=,".to_owned(),
+        format!("--save-stats={}", stats_path.display()),
+        format!("--html-report={}", report_path.display()),
         format!("--profiler-output={}", profile_path.display()),
     ];
     let process = Command::new(&command[0])
@@ -69,16 +73,13 @@ fn main() -> Result<()> {
         bincode::serde::decode_from_slice(&output_bytes, bincode::config::standard())
             .context("decode ZisK public output")?;
     let stdout = String::from_utf8_lossy(&process.stdout);
-    let mut statistics = parse_zisk_statistics(&stdout);
-    if statistics.variable_cost.is_none() {
-        statistics.variable_cost = statistics
-            .total_cost
-            .zip(statistics.base_cost)
-            .map(|(total, base)| total.saturating_sub(base));
+    for path in [&stats_path, &report_path] {
+        if !path.is_file() {
+            bail!("ZisK did not produce {}", path.display());
+        }
     }
-    let total_cost = statistics
-        .total_cost
-        .context("ZisK statistics have no TOTAL cost")?;
+    let statistics = parse_zisk_stats_csv(&fs::read_to_string(&stats_path)?);
+    let total_cost = statistics.total_cost.context("ZisK snapshot has no TOTAL cost")?;
     let profile = read_firefox_profile(&profile_path, 1)?;
     if profile.folded.is_empty() {
         bail!("ZisK produced an empty profile");
@@ -90,18 +91,7 @@ fn main() -> Result<()> {
         "ZisK proof-area profile",
         "cost",
     )?;
-    write_zisk_stats_csv(&statistics, &args.out.join("stats.csv"))?;
     let cumulative_functions = parse_zisk_function_costs(&stdout);
-    let report_functions = if cumulative_functions.is_empty() {
-        profile.top_inclusive(100)
-    } else {
-        cumulative_functions.clone()
-    };
-    write_zisk_html(
-        &statistics,
-        &report_functions,
-        &args.out.join("report.html"),
-    )?;
 
     let mut secondary_metrics = Vec::new();
     if let Some(value) = statistics.steps {

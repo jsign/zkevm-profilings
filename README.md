@@ -3,15 +3,13 @@
 This repository profiles one Rust workload on OpenVM, SP1, and ZisK. It does not use Docker.
 Each adapter uses the applicable native Rust toolchain and SDK.
 
-Default profile operations run OpenVM and SP1. They temporarily exclude ZisK because the pinned
-ZisK release does not complete the current profile operation. The ZisK adapter remains available
-for development with an explicit VM selection.
+Default profile operations run all three adapters.
 
 The harness pins these releases:
 
 - [OpenVM v2.1.0-preview](https://github.com/openvm-org/openvm/tree/v2.1.0-preview) at commit `538c548`
 - [SP1 v6.4.0](https://github.com/succinctlabs/sp1/releases/tag/v6.4.0)
-- [ZisK v1.0.0-alpha](https://github.com/0xPolygonHermez/zisk/releases/tag/v1.0.0-alpha)
+- [ZisK v1.1.0-alpha](https://github.com/0xPolygonHermez/zisk/releases/tag/v1.1.0-alpha)
 
 Each adapter has a separate `Cargo.lock` file and target directory. The root workspace resolves its
 dependencies separately from the vendor dependencies.
@@ -22,7 +20,7 @@ CLI commit instead of its package version.
 
 ## Sample flamegraphs
 
-These flamegraphs come from profile run `20260818-003648Z` with the supplied default fixture. Each
+These flamegraphs come from profile run `20260818-114647Z` with the supplied default fixture. Each
 image links to the full-size SVG.
 
 ### OpenVM
@@ -33,8 +31,13 @@ image links to the full-size SVG.
 
 [![SP1 execution flamegraph][sp1-sample]][sp1-sample]
 
-[openvm-sample]: assets/20260818-003648Z/openvm-flamegraph.svg
-[sp1-sample]: assets/20260818-003648Z/sp1-flamegraph.svg
+### ZisK
+
+[![ZisK proof-area flamegraph][zisk-sample]][zisk-sample]
+
+[openvm-sample]: assets/20260818-114647Z/openvm-flamegraph.svg
+[sp1-sample]: assets/20260818-114647Z/sp1-flamegraph.svg
+[zisk-sample]: assets/20260818-114647Z/zisk-flamegraph.svg
 
 ## Quick start
 
@@ -61,13 +64,19 @@ cargo openvm toolchain install
 
 The preview supplies guest toolchains for x86-64 Linux, AArch64 Linux, and AArch64 macOS.
 
-To profile all enabled VMs with the supplied fixture, use this command:
+Install the pinned ZisK CPU CLI and guest toolchain with this command:
+
+```text
+curl https://raw.githubusercontent.com/0xPolygonHermez/zisk/main/ziskup/install.sh | bash -s -- --version 1.1.0-alpha --cpu --nokey
+```
+
+To profile all VMs with the supplied fixture, use this command:
 
 ```text
 ./scripts/profile-all --input fixtures/default.json
 ```
 
-To profile one enabled adapter or select an output directory, use this command:
+To profile one adapter, use this command:
 
 ```text
 cargo xtask profile --vm sp1 --input fixtures/default.json
@@ -140,11 +149,7 @@ prover gas, instruction count, syscall count, and public output.
 
 ### ZisK
 
-The default VM selection does not run ZisK. The `profile-all` script and the smoke workflow use
-this default selection. A compatible ZisK release is necessary before the default selection can
-include this adapter.
-
-For ZisK adapter development, select the adapter explicitly:
+To check or profile only ZisK, select the adapter explicitly:
 
 ```text
 cargo xtask doctor --vm zisk
@@ -153,11 +158,10 @@ cargo xtask profile --vm zisk --input fixtures/default.json --out /tmp/zisk-prof
 
 The adapter uses `cargo-zisk` to build the guest. It uses `ZiskStdin` to make the native input file.
 Then, it starts `ziskemu` with symbols, full statistics, top functions, a Firefox profile, and
-ungrouped numbers.
-
-ZisK v1.0.0-alpha does not have the later `--save-stats` or `--html-report` CLI options. The harness
-keeps the complete emulator output. It uses this output to make `stats.csv` and `report.html`.
-It does not replace or discard vendor data.
+ungrouped numbers. ZisK writes the statistics snapshot and HTML report with its native
+`--save-stats` and `--html-report` options. The harness also keeps the complete emulator output.
+The summary gets its totals from `stats.csv`. These totals include the initialization costs for ROM
+and RAM.
 
 ## Output
 
@@ -196,10 +200,9 @@ profiles/<run>/
 An adapter directory can contain more raw build and execution logs. `run.json` contains each
 declared artifact, command, version, duration, hash, status, output digest, and profiling mode.
 
-The default selection profiles OpenVM and SP1 in that sequence. An explicit `--vm all` selection
-also profiles ZisK last. If one adapter fails, the harness continues with the remaining selected
-adapters. It always writes `run.json` and `summary.md`. If any adapter fails, the command exits
-with a nonzero status.
+The default `--vm all` selection profiles OpenVM, SP1, and ZisK in that sequence. If one adapter
+fails, the harness continues with the remaining selected adapters. It always writes `run.json` and
+`summary.md`. If any adapter fails, the command exits with a nonzero status.
 
 ## Read the metrics correctly
 
@@ -226,7 +229,7 @@ adapters/openvm       Isolated OpenVM guest and runner
 adapters/sp1          Isolated SP1 guest and runner
 adapters/zisk         Isolated ZisK guest and runner
 fixtures              Small committed inputs and parser fixtures
-scripts/profile-all   Entry point for profiling all enabled adapters
+scripts/profile-all   Entry point for profiling all adapters
 ```
 
 Git ignores generated profiles and all build directories. The repository contains fixtures and all

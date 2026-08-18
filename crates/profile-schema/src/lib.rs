@@ -628,6 +628,36 @@ pub fn parse_zisk_statistics(text: &str) -> ZiskStatistics {
     statistics
 }
 
+/// Get stable top-level values from a ZisK statistics snapshot that uses commas.
+pub fn parse_zisk_stats_csv(text: &str) -> ZiskStatistics {
+    let mut statistics = ZiskStatistics::default();
+    for line in text.lines() {
+        let mut fields = line.split(',').map(str::trim);
+        let Some(section) = fields.next() else {
+            continue;
+        };
+        if section.eq_ignore_ascii_case("STEPS") {
+            statistics.steps = fields.next().and_then(|value| value.parse().ok());
+            continue;
+        }
+        if !section.eq_ignore_ascii_case("COST") {
+            continue;
+        }
+        let Some(metric) = fields.next() else {
+            continue;
+        };
+        let value = fields.next().and_then(|value| value.parse::<u64>().ok());
+        if metric.eq_ignore_ascii_case("BASE") {
+            statistics.base_cost = value;
+        } else if metric.eq_ignore_ascii_case("VARIABLE") {
+            statistics.variable_cost = value;
+        } else if metric.eq_ignore_ascii_case("TOTAL") {
+            statistics.total_cost = value;
+        }
+    }
+    statistics
+}
+
 /// Parse cumulative function costs from the ZisK SDK-style `TOP COST FUNCTIONS` table.
 pub fn parse_zisk_function_costs(text: &str) -> Vec<FunctionCost> {
     let mut in_table = false;
@@ -668,70 +698,6 @@ pub fn parse_zisk_function_costs(text: &str) -> Vec<FunctionCost> {
         }
     }
     functions
-}
-
-pub fn write_zisk_stats_csv(statistics: &ZiskStatistics, path: &Path) -> Result<()> {
-    let mut writer = BufWriter::new(File::create(path)?);
-    writeln!(writer, "metric,value")?;
-    for (name, value) in [
-        ("steps", statistics.steps),
-        ("base_cost", statistics.base_cost),
-        ("variable_cost", statistics.variable_cost),
-        ("total_cost", statistics.total_cost),
-    ] {
-        if let Some(value) = value {
-            writeln!(writer, "{name},{value}")?;
-        }
-    }
-    Ok(())
-}
-
-pub fn write_zisk_html(
-    statistics: &ZiskStatistics,
-    functions: &[FunctionCost],
-    path: &Path,
-) -> Result<()> {
-    let mut writer = BufWriter::new(File::create(path)?);
-    writeln!(
-        writer,
-        "<!doctype html><meta charset=\"utf-8\"><title>ZisK profile</title>\
-         <style>body{{font:14px system-ui;margin:2rem;max-width:70rem}}\
-         table{{border-collapse:collapse;width:100%}}th,td{{border:1px solid #ccc;padding:.4rem;text-align:left}}\
-         td:nth-child(n+2){{text-align:right}}</style><h1>ZisK profile</h1>"
-    )?;
-    writeln!(
-        writer,
-        "<h2>Statistics</h2><table><tr><th>Metric</th><th>Value</th></tr>"
-    )?;
-    for (name, value) in [
-        ("Steps", statistics.steps),
-        ("Base cost", statistics.base_cost),
-        ("Variable cost", statistics.variable_cost),
-        ("Total cost", statistics.total_cost),
-    ] {
-        if let Some(value) = value {
-            writeln!(writer, "<tr><td>{name}</td><td>{value}</td></tr>")?;
-        }
-    }
-    writeln!(writer, "</table><h2>Functions</h2><table><tr><th>Function</th><th>Self</th><th>Inclusive</th></tr>")?;
-    for function in functions {
-        writeln!(
-            writer,
-            "<tr><td>{}</td><td>{}</td><td>{}</td></tr>",
-            html_escape(&function.name),
-            function.self_cost,
-            function.inclusive_cost
-        )?;
-    }
-    writeln!(writer, "</table>")?;
-    Ok(())
-}
-
-fn html_escape(text: &str) -> String {
-    text.replace('&', "&amp;")
-        .replace('<', "&lt;")
-        .replace('>', "&gt;")
-        .replace('"', "&quot;")
 }
 
 pub fn write_json<T: Serialize>(value: &T, path: &Path) -> Result<()> {
@@ -872,6 +838,25 @@ mod tests {
             parse_zisk_function_costs(include_str!("../../../fixtures/profiles/zisk-stats.txt"));
         assert_eq!(functions[0].name, "guest_workload::run");
         assert_eq!(functions[0].inclusive_cost, 11_144_042_101);
+    }
+
+    #[test]
+    fn parses_zisk_statistics_snapshot() {
+        let statistics = parse_zisk_stats_csv(
+            "STEPS,414129\n\nCOST,COST DISTRIBUTION,COST,%\n\
+             COST,VARIABLE,40245383,12.29%\n\
+             COST,BASE,287309824,87.71%\n\
+             COST,TOTAL,327555207,100.00%\n",
+        );
+        assert_eq!(
+            statistics,
+            ZiskStatistics {
+                steps: Some(414_129),
+                base_cost: Some(287_309_824),
+                variable_cost: Some(40_245_383),
+                total_cost: Some(327_555_207),
+            }
+        );
     }
 
     #[test]

@@ -29,7 +29,6 @@ enum Task {
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, ValueEnum)]
 enum VmSelection {
-    Enabled,
     All,
     Openvm,
     Sp1,
@@ -39,7 +38,6 @@ enum VmSelection {
 impl VmSelection {
     fn members(self) -> Vec<Vm> {
         match self {
-            Self::Enabled => vec![Vm::Openvm, Vm::Sp1],
             Self::All => vec![Vm::Openvm, Vm::Sp1, Vm::Zisk],
             Self::Openvm => vec![Vm::Openvm],
             Self::Sp1 => vec![Vm::Sp1],
@@ -50,15 +48,15 @@ impl VmSelection {
 
 #[derive(Debug, Args)]
 struct DoctorArgs {
-    /// Select enabled adapters, all adapters, or one adapter.
-    #[arg(long, value_enum, default_value_t = VmSelection::Enabled)]
+    /// Select all adapters or one adapter.
+    #[arg(long, value_enum, default_value_t = VmSelection::All)]
     vm: VmSelection,
 }
 
 #[derive(Debug, Args)]
 struct ProfileArgs {
-    /// Select enabled adapters, all adapters, or one adapter.
-    #[arg(long, value_enum, default_value_t = VmSelection::Enabled)]
+    /// Select all adapters or one adapter.
+    #[arg(long, value_enum, default_value_t = VmSelection::All)]
     vm: VmSelection,
     /// This JSON file contains `seed` and `rounds`.
     #[arg(long)]
@@ -151,15 +149,15 @@ const ZISK_TOOLS: [ToolRequirement; 2] = [
         "cargo-zisk",
         "cargo-zisk",
         VERSION_ARGUMENTS,
-        "1.0.0-alpha",
-        "curl https://raw.githubusercontent.com/0xPolygonHermez/zisk/main/ziskup/install.sh | bash -s -- --version 1.0.0-alpha --cpu --nokey",
+        "1.1.0-alpha",
+        "curl https://raw.githubusercontent.com/0xPolygonHermez/zisk/main/ziskup/install.sh | bash -s -- --version 1.1.0-alpha --cpu --nokey",
     ),
     ToolRequirement::new(
         "ziskemu",
         "ziskemu",
         VERSION_ARGUMENTS,
-        "1.0.0-alpha",
-        "ziskup --version 1.0.0-alpha --cpu --nokey",
+        "1.1.0-alpha",
+        "ziskup --version 1.1.0-alpha --cpu --nokey",
     ),
 ];
 
@@ -826,8 +824,7 @@ mod tests {
     }
 
     #[test]
-    fn enabled_selection_excludes_zisk() {
-        assert_eq!(VmSelection::Enabled.members(), vec![Vm::Openvm, Vm::Sp1]);
+    fn all_selection_includes_every_adapter() {
         assert_eq!(
             VmSelection::All.members(),
             vec![Vm::Openvm, Vm::Sp1, Vm::Zisk]
@@ -835,19 +832,24 @@ mod tests {
     }
 
     #[test]
-    fn commands_use_enabled_selection_by_default() {
+    fn commands_select_all_adapters_by_default() {
         let doctor = Cli::try_parse_from(["cargo", "doctor"]).unwrap();
         let Task::Doctor(doctor_args) = doctor.command else {
             panic!("expected doctor command");
         };
-        assert_eq!(doctor_args.vm, VmSelection::Enabled);
+        assert_eq!(doctor_args.vm, VmSelection::All);
 
         let profile =
             Cli::try_parse_from(["cargo", "profile", "--input", "fixtures/default.json"]).unwrap();
         let Task::Profile(profile_args) = profile.command else {
             panic!("expected profile command");
         };
-        assert_eq!(profile_args.vm, VmSelection::Enabled);
+        assert_eq!(profile_args.vm, VmSelection::All);
+    }
+
+    #[test]
+    fn enabled_selection_is_not_accepted() {
+        assert!(Cli::try_parse_from(["cargo", "doctor", "--vm", "enabled"]).is_err());
     }
 
     #[test]
@@ -920,6 +922,16 @@ mod tests {
             Some(SP1_TOOLS[0].version_fragment)
         ));
         assert!(!output_matches_version(observed, Some("6.4.0")));
+    }
+
+    #[test]
+    fn zisk_release_matches_cli_version_output() {
+        let observed = "cargo-zisk 1.1.0-alpha [cpu] (9a5a1ac 2026-08-18T00:38:31Z)";
+        assert!(output_matches_version(
+            observed,
+            Some(ZISK_TOOLS[0].version_fragment)
+        ));
+        assert!(!output_matches_version(observed, Some("1.0.0-alpha")));
     }
 
     #[test]
